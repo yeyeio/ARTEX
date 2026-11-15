@@ -140,6 +140,9 @@ const (
 // OpenAI's public endpoint).
 const FormatOllama llm.Format = "ollama"
 
+// FormatAntigravity selects the official agy CLI-backed provider; no API key is used.
+const FormatAntigravity llm.Format = "antigravity"
+
 // DefaultOllamaBaseURL is the base of Ollama's OpenAI-compatible endpoint the
 // provider appends /chat/completions to. Must never end up empty: with an
 // empty BaseURL, the SDK would fall back to OpenAI's public endpoint.
@@ -170,7 +173,7 @@ func normalizeOllamaBaseURL(raw string) string {
 
 // NeedsAPIKey reports whether this provider format requires an API key to be
 // usable. Ollama (local server) is keyless; every cloud format needs one.
-func (c Config) NeedsAPIKey() bool { return c.Format != FormatOllama }
+func (c Config) NeedsAPIKey() bool { return c.Format != FormatOllama && c.Format != FormatAntigravity }
 
 // CompactionWindow returns the model context window in TOKENS for compaction
 // thresholds, resolved from the user-configured size (ContextWindowK). 0/unset →
@@ -201,7 +204,7 @@ func compactionConfig(windowTokens int) *compaction.Config {
 
 // FromEnv resolves the LLM provider config:
 //
-//	ARTEX_LLM_PROVIDER = anthropic|openai|openai-responses|ollama (default: inferred from keys)
+//	ARTEX_LLM_PROVIDER = anthropic|openai|openai-responses|ollama|antigravity (default: inferred from keys)
 //	ARTEX_LLM_MODEL    = model id        (default: per provider)
 //	ARTEX_LLM_BASE_URL = endpoint        (optional; ollama defaults to localhost:11434/v1)
 //	ARTEX_LLM_PROXY    = proxy URL        (optional; http/https/socks5)
@@ -245,6 +248,8 @@ func FromEnv() (Config, bool) {
 		if c.Model == "" {
 			c.Model = "gpt-5"
 		}
+	case "antigravity":
+		c.Format = FormatAntigravity
 	case "ollama":
 		c.Format = FormatOllama
 		// Deliberately NOT inheriting OPENAI_API_KEY: a local Ollama ignores the
@@ -296,6 +301,8 @@ func ConfigFrom(provider, model, baseURL, apiKey, proxy string) Config {
 		if c.Model == "" {
 			c.Model = "gpt-5"
 		}
+	case "antigravity":
+		c.Format = FormatAntigravity
 	case "ollama":
 		c.Format = FormatOllama
 		// Ollama's OpenAI-compatible endpoint lives at /v1 and the provider
@@ -337,6 +344,8 @@ func (c Config) Provider() string {
 		return "openai-responses"
 	case FormatOllama:
 		return "ollama"
+	case FormatAntigravity:
+		return "antigravity"
 	}
 	return "anthropic"
 }
@@ -345,6 +354,9 @@ func (c Config) Provider() string {
 // limiter lives on the single provider instance — so planner + all workers +
 // main agent (which share this provider) are bounded by one shared rate limit.
 func (c Config) NewProvider() (llm.Provider, error) {
+	if c.Format == FormatAntigravity {
+		return newAntigravityProvider(c)
+	}
 	client, err := quotaAwareHTTPClient(c.Proxy, c.SessionHeaderKey, c.UserAgent)
 	if err != nil {
 		return nil, err
