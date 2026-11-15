@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -74,10 +75,19 @@ func TestAntigravityCompleteParsesTextAndUsage(t *testing.T) {
 }
 
 func TestAntigravityCompleteMapsTextToolCall(t *testing.T) {
-	command := fakeAgy(t,
-		`{"event":"step_update","step_update":{"step_type":"model","text_delta":"<tool_call>{\\"id\\":\\"call-1\\",\\"type\\":\\"function\\",\\"function\\":{\\"name\\":\\"list_assets\\",\\"arguments\\":\\"{\\\\\\"limit\\\\\\":10}\\\"}}</tool_call>"}}}`,
-		`{"event":"result","result":{"status":"SUCCESS","response":""}}`,
-	)
+	callJSON, err := json.Marshal(map[string]any{
+		"id": "call-1",
+		"type": "function",
+		"function": map[string]any{"name": "list_assets", "arguments": `{"limit":10}`},
+	})
+	if err != nil { t.Fatal(err) }
+	stepJSON, err := json.Marshal(map[string]any{
+		"event": "step_update",
+		"step_update": map[string]any{"step_type": "model", "text_delta": "<tool_call>" + string(callJSON) + "</tool_call>"},
+	})
+	if err != nil { t.Fatal(err) }
+	resultJSON := `{"event":"result","result":{"status":"SUCCESS","response":""}}`
+	command := fakeAgy(t, string(stepJSON), resultJSON)
 	p := &antigravityProvider{command: command, model: "gemini-test", timeout: time.Second * 5}
 	msg, stop, _, err := p.Complete(context.Background(), llm.CompletionRequest{
 		Messages: []llm.Message{llm.UserText("list assets")},
