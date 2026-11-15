@@ -158,7 +158,7 @@ func (p *antigravityProvider) run(ctx context.Context, req llm.CompletionRequest
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	sawResult, sawOutput := false, false
+	sawResult, sawOutput, sawToolCall := false, false, false
 	textPending := ""
 	emitText := func(delta string, final bool) bool {
 		textPending += delta
@@ -214,6 +214,7 @@ func (p *antigravityProvider) run(ctx context.Context, req llm.CompletionRequest
 				if json.Unmarshal(args, &encoded) == nil { args = json.RawMessage(encoded) }
 			}
 			if !json.Valid(args) { args = json.RawMessage("{}") }
+			sawToolCall = true
 			id := call.ID
 			if id == "" { id = fmt.Sprintf("agy-call-%d", time.Now().UnixNano()) }
 			if !yield(llm.StreamEvent{Type: llm.SEToolUseStart, ToolID: id, ToolName: call.Function.Name}, nil) { return false }
@@ -267,6 +268,9 @@ func (p *antigravityProvider) run(ctx context.Context, req llm.CompletionRequest
 	if !emitText("", true) { return nil }
 	if waitErr != nil { return fmt.Errorf("antigravity: agy exited: %w: %s", waitErr, strings.TrimSpace(stderr.String())) }
 	if !sawResult || !sawOutput { return fmt.Errorf("antigravity: CLI returned no complete response (result=%t output=%t): %s", sawResult, sawOutput, strings.TrimSpace(stderr.String())) }
+	stopReason := "end_turn"
+	if sawToolCall { stopReason = "tool_use" }
+	yield(llm.StreamEvent{Type: llm.SEMessageDelta, StopReason: stopReason}, nil)
 	yield(llm.StreamEvent{Type: llm.SEMessageStop}, nil)
 	return nil
 }
