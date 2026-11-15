@@ -17,6 +17,8 @@ func TestAntigravityArgsUseExactModelAndSupportedEffort(t *testing.T) {
 		{"claude model", "claude-sonnet-4", "high", false},
 		{"gpt model", "gpt-oss-120b", "medium", false},
 		{"invalid effort", "gemini-3.8-pro", "extreme", false},
+		{"none maps to low", "gemini-3.8-pro", "none", true},
+		{"minimal maps to low", "gemini-3.8-pro", "minimal", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -28,6 +30,9 @@ func TestAntigravityArgsUseExactModelAndSupportedEffort(t *testing.T) {
 			got := strings.Contains(args, "--effort ")
 			if got != tt.wantEffort {
 				t.Fatalf("effort flag present=%t, want %t: %q", got, tt.wantEffort, args)
+			}
+			if tt.effort == "none" || tt.effort == "minimal" {
+				if !strings.Contains(args, "--effort low") { t.Fatalf("effort was not normalized to low: %q", args) }
 			}
 		})
 	}
