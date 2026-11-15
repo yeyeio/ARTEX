@@ -361,7 +361,7 @@ func (s *Server) loadLLMConfig() (agent.Config, bool) {
 	cfg.SessionHeaderKey = p.SessionHeaderKey
 	cfg.UserAgent = p.UserAgent
 	s.applyProfileRetry(&cfg, p)
-	// Ollama profiles run keyless (local server); the other formats need a key.
+	// Ollama runs keyless against a local server; Antigravity delegates OAuth to agy.
 	if cfg.APIKey == "" && cfg.NeedsAPIKey() {
 		return cfg, false
 	}
@@ -373,8 +373,7 @@ func (s *Server) loadLLMConfig() (agent.Config, bool) {
 
 // saveLLMConfig persists the LLM config as the active "default" profile in PG.
 func (s *Server) saveLLMConfig(cfg agent.Config) error {
-	// cfg.Provider() already returns one of the three valid format strings
-	// (anthropic / openai / openai-responses), matching the DB CHECK constraint.
+	// cfg.Provider() returns a format accepted by the llm_profiles DB CHECK constraint.
 	format := cfg.Provider()
 	var id int64
 	// This legacy endpoint's request body carries no failover/streaming/output-cap params, so the values already stored in the DB are passed back untouched —
