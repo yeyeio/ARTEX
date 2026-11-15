@@ -764,7 +764,7 @@ function ProfileSheet({
           </div>}
 
           <div className="grid gap-3 rounded-lg border p-3">
-            <div className="flex items-center justify-between gap-4">
+            {format !== "antigravity" &&             <div className="flex items-center justify-between gap-4">
               <div className="grid gap-0.5">
                 <Label className="text-sm">Thinking switch · thinking.type</Label>
                 <p className="text-muted-foreground text-xs">
@@ -784,13 +784,12 @@ function ProfileSheet({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </div>}
             <div className="flex items-center justify-between gap-4 border-t pt-3">
               <div className="grid gap-0.5">
                 <Label className="text-sm">Thinking effort · reasoning_effort</Label>
                 <p className="text-muted-foreground text-xs">
-                  A separate effort knob (OpenAI reasoning_effort / Anthropic output_config.effort). Some APIs have no thinking
-                  field and activate thinking via effort alone, so it can be set on its own without sending the thinking switch.
+                  {format === "antigravity" ? "For Gemini models, agy receives the supported CLI effort flag. Native model variants already encode their own effort." : "A separate effort knob (OpenAI reasoning_effort / Anthropic output_config.effort). Some APIs have no thinking field and activate thinking via effort alone."}
                 </p>
               </div>
               <Select value={effort} onValueChange={setEffort}>
