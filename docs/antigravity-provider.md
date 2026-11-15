@@ -11,7 +11,7 @@ ARTEX has an experimental first-class `antigravity` LLM profile format. It deleg
 
 If ARTEX runs in Docker, the CLI and its authenticated account must be available inside the ARTEX container/runtime. Signing in on the host does not automatically authenticate a container with a different HOME or credential store.
 
-Set `ANTIGRAVITY_COMMAND` if the executable is not named `agy` or is not on PATH.
+The provider checks `ANTIGRAVITY_COMMAND`, `AGY_CLI_PATH`, and `ANTIGRAVITY_CLI_PATH`, then PATH and common user-local install locations. Set one of those variables if the executable is installed elsewhere.
 
 ## Security and execution model
 
