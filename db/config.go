@@ -163,7 +163,7 @@ func (d *DB) ProfileByID(id int64) (*LLMProfile, error) {
 // slice front to back.
 func (d *DB) PoolProfiles() ([]*LLMProfile, error) {
 	rows, err := d.Query(`SELECT ` + profileColsKey + ` FROM llm_profiles
-WHERE (COALESCE(api_key,'') <> '' OR format='ollama') AND (is_default OR NOT pool_exclude)
+WHERE (COALESCE(api_key,'') <> '' OR format IN ('ollama','antigravity')) AND (is_default OR NOT pool_exclude)
 ORDER BY is_default DESC, priority DESC, id ASC`)
 	if err != nil {
 		return nil, err
