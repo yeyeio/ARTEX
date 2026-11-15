@@ -99,6 +99,68 @@ func (p *antigravityProvider) run(ctx context.Context, req llm.CompletionRequest
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	sawResult, sawOutput := false, false
+	textPending := ""
+	emitText := func(delta string, final bool) bool {
+		textPending += delta
+		for len(textPending) > 0 {
+			start := strings.Index(textPending, "<tool_call>")
+			if start < 0 {
+				if final {
+					if textPending != "" && !yield(llm.StreamEvent{Type: llm.SETextDelta, Text: textPending}, nil) { return false }
+					textPending = ""
+					return true
+				}
+				keep := 0
+				max := len("<tool_call>") - 1
+				if len(textPending) < max { max = len(textPending) }
+				for n := max; n > 0; n-- {
+					if strings.HasSuffix(textPending, "<tool_call>"[:n]) { keep = n; break }
+				}
+				safe := textPending[:len(textPending)-keep]
+				textPending = textPending[len(safe):]
+				if safe != "" && !yield(llm.StreamEvent{Type: llm.SETextDelta, Text: safe}, nil) { return false }
+				return true
+			}
+			if start > 0 {
+				plain := textPending[:start]
+				textPending = textPending[start:]
+				if !yield(llm.StreamEvent{Type: llm.SETextDelta, Text: plain}, nil) { return false }
+			}
+			end := strings.Index(textPending, "</tool_call>")
+			if end < 0 {
+				if final {
+					if !yield(llm.StreamEvent{Type: llm.SETextDelta, Text: textPending}, nil) { return false }
+					textPending = ""
+				}
+				return true
+			}
+			body := strings.TrimSpace(textPending[len("<tool_call>"):end])
+			textPending = textPending[end+len("</tool_call>"):]
+			var call struct {
+				ID string `json:"id"`
+				Function struct {
+					Name string `json:"name"`
+					Arguments json.RawMessage `json:"arguments"`
+				} `json:"function"`
+			}
+			if err := json.Unmarshal([]byte(body), &call); err != nil || call.Function.Name == "" {
+				if !yield(llm.StreamEvent{Type: llm.SETextDelta, Text: "<tool_call>"+body+"</tool_call>"}, nil) { return false }
+				continue
+			}
+			args := call.Function.Arguments
+			if len(args) == 0 { args = json.RawMessage("{}") }
+			if len(args) > 0 && args[0] == '"' {
+				var encoded string
+				if json.Unmarshal(args, &encoded) == nil { args = json.RawMessage(encoded) }
+			}
+			if !json.Valid(args) { args = json.RawMessage("{}") }
+			id := call.ID
+			if id == "" { id = fmt.Sprintf("agy-call-%d", time.Now().UnixNano()) }
+			if !yield(llm.StreamEvent{Type: llm.SEToolUseStart, ToolID: id, ToolName: call.Function.Name}, nil) { return false }
+			if !yield(llm.StreamEvent{Type: llm.SEToolInputJSON, Text: string(args)}, nil) { return false }
+		}
+		return true
+	}
 	for scanner.Scan() {
 		if callCtx.Err() != nil { break }
 		line := strings.TrimSpace(scanner.Text())
@@ -121,7 +183,7 @@ func (p *antigravityProvider) run(ctx context.Context, req llm.CompletionRequest
 			}
 			if s, ok := step["text_delta"].(string); ok && s != "" {
 				sawOutput = true
-				if !yield(llm.StreamEvent{Type: llm.SETextDelta, Text: s}, nil) { _ = cmd.Process.Kill(); _ = cmd.Wait(); return nil }
+				if !emitText(s, false) { _ = cmd.Process.Kill(); _ = cmd.Wait(); return nil }
 			}
 			if u, ok := step["usage"].(map[string]any); ok {
 				if !yield(llm.StreamEvent{Type: llm.SEMessageDelta, Usage: agyUsage(u)}, nil) { _ = cmd.Process.Kill(); _ = cmd.Wait(); return nil }
@@ -136,7 +198,7 @@ func (p *antigravityProvider) run(ctx context.Context, req llm.CompletionRequest
 			if msg, _ := res["error"].(string); msg != "" { _ = cmd.Wait(); return fmt.Errorf("antigravity: %s", msg) }
 			if status, _ := res["status"].(string); status != "SUCCESS" { _ = cmd.Wait(); return fmt.Errorf("antigravity: unexpected result status %q", status) }
 			if response, _ := res["response"].(string); response != "" && !sawOutput {
-				if !yield(llm.StreamEvent{Type: llm.SETextDelta, Text: response}, nil) { _ = cmd.Process.Kill(); _ = cmd.Wait(); return nil }
+				if !emitText(response, false) { _ = cmd.Process.Kill(); _ = cmd.Wait(); return nil }
 				sawOutput = true
 			}
 		}
@@ -145,6 +207,7 @@ func (p *antigravityProvider) run(ctx context.Context, req llm.CompletionRequest
 	waitErr := cmd.Wait()
 	if callCtx.Err() != nil { return callCtx.Err() }
 	if scanErr != nil { return fmt.Errorf("antigravity: read stream: %w", scanErr) }
+	if !emitText("", true) { return nil }
 	if waitErr != nil { return fmt.Errorf("antigravity: agy exited: %w: %s", waitErr, strings.TrimSpace(stderr.String())) }
 	if !sawResult || !sawOutput { return fmt.Errorf("antigravity: CLI returned no complete response (result=%t output=%t): %s", sawResult, sawOutput, strings.TrimSpace(stderr.String())) }
 	yield(llm.StreamEvent{Type: llm.SEMessageStop}, nil)
