@@ -18,7 +18,7 @@ The provider checks `ANTIGRAVITY_COMMAND`, `AGY_CLI_PATH`, and `ANTIGRAVITY_CLI_
 - ARTEX invokes `agy` as a child process with a bounded request timeout.
 - The CLI owns Google authentication. ARTEX does not parse, copy, print, or persist OAuth tokens.
 - The prompt explicitly asks the model to request ARTEX tools using `<tool_call>` JSON blocks. ARTEX parses those blocks into Norma tool-call events.
-- If the CLI reports a native tool execution step, ARTEX terminates the process and fails closed. The CLI must not execute host tools on behalf of ARTEX.
+- If the CLI reports a native tool step, ARTEX terminates the process and fails the request; it never accepts a native tool result as an ARTEX tool result. This is best-effort neutralization after the CLI emits the step event, not a sandbox guarantee that an action could not have started before termination. Run ARTEX under a least-privileged OS account/container.
 - Model IDs are passed through unchanged. A separate `--effort` flag is used only for suffixless Gemini model IDs and supported effort values.
 
 ## Current limitations
