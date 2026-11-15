@@ -142,7 +142,7 @@ func (p *antigravityProvider) run(ctx context.Context, req llm.CompletionRequest
 	cmd := exec.CommandContext(callCtx, p.command, p.args()...)
 	cmd.Stdin = strings.NewReader(prompt)
 	var stderr bytes.Buffer
-	cmd.Stderr = &limitedWriter{buf: &stderr, max: 64 * 1024}
+	cmd.Stderr = &agyLimitedWriter{buf: &stderr, max: 64 * 1024}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil { return fmt.Errorf("antigravity: stdout pipe: %w", err) }
 	if err = cmd.Start(); err != nil { return fmt.Errorf("antigravity: start agy: %w", err) }
@@ -299,8 +299,8 @@ func agyUsage(m map[string]any) llm.Usage {
 	return llm.Usage{InputTokens:num("input_tokens"), OutputTokens:num("output_tokens"), CacheReadTokens:num("cache_read_tokens"), CacheWriteTokens:num("cache_write_tokens")}
 }
 
-type limitedWriter struct { buf *bytes.Buffer; max int }
-func (w *limitedWriter) Write(p []byte) (int, error) {
+type agyLimitedWriter struct { buf *bytes.Buffer; max int }
+func (w *agyLimitedWriter) Write(p []byte) (int, error) {
 	n := len(p)
 	left := w.max - w.buf.Len()
 	if left > 0 { if len(p) > left { p = p[:left] }; _, _ = w.buf.Write(p) }
