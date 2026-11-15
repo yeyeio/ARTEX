@@ -134,7 +134,7 @@ const (
 // FormatOllama marks a LOCAL Ollama server profile. Ollama exposes an
 // OpenAI-compatible Chat Completions endpoint (/v1), so on the wire it speaks
 // llm.FormatOpenAI; the distinct sentinel matters everywhere a profile must be
-// treated as usable WITHOUT an API key — Ollama runs keyless on localhost/LAN.
+// treated as usable WITHOUT an API key — Ollama is local, while Antigravity delegates auth to agy.
 // See NeedsAPIKey and NewProvider (which maps it onto FormatOpenAI while
 // forcing our base-URL/key defaults so an empty key never falls back to
 // OpenAI's public endpoint).
@@ -171,8 +171,8 @@ func normalizeOllamaBaseURL(raw string) string {
 	return b
 }
 
-// NeedsAPIKey reports whether this provider format requires an API key to be
-// usable. Ollama (local server) is keyless; every cloud format needs one.
+// NeedsAPIKey reports whether this provider format requires an API key.
+// Ollama is keyless locally; Antigravity delegates authentication to agy.
 func (c Config) NeedsAPIKey() bool { return c.Format != FormatOllama && c.Format != FormatAntigravity }
 
 // CompactionWindow returns the model context window in TOKENS for compaction
@@ -335,7 +335,7 @@ func isFalsy(s string) bool {
 }
 
 // Provider returns the short provider name
-// ("anthropic"/"openai"/"openai-responses"/"ollama").
+// ("anthropic"/"openai"/"openai-responses"/"ollama"/"antigravity").
 func (c Config) Provider() string {
 	switch c.Format {
 	case llm.FormatOpenAI:
