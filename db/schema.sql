@@ -370,7 +370,7 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS llm_profiles (
     id               BIGSERIAL PRIMARY KEY,
     name             TEXT NOT NULL UNIQUE,
-    format           TEXT NOT NULL CHECK (format IN ('openai','anthropic','openai-responses','ollama')),
+    format           TEXT NOT NULL CHECK (format IN ('openai','anthropic','openai-responses','ollama','antigravity')),
     base_url         TEXT,
     proxy            TEXT,
     model            TEXT NOT NULL,
