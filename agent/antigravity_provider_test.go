@@ -1,8 +1,13 @@
 package agent
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Autumn-27/norma/llm"
 )
@@ -35,6 +40,55 @@ func TestAntigravityArgsUseExactModelAndSupportedEffort(t *testing.T) {
 				if !strings.Contains(args, "--effort low") { t.Fatalf("effort was not normalized to low: %q", args) }
 			}
 		})
+	}
+}
+
+func fakeAgy(t *testing.T, events ...string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" { t.Skip("fake shell CLI test is POSIX-only") }
+	path := filepath.Join(t.TempDir(), "agy")
+	var script strings.Builder
+	script.WriteString("#!/bin/sh\ncat >/dev/null\n")
+	for _, event := range events {
+		script.WriteString("printf '%s\\n' '")
+		script.WriteString(strings.ReplaceAll(event, "'", "'\\''"))
+		script.WriteString("'\n")
+	}
+	if err := os.WriteFile(path, []byte(script.String()), 0o700); err != nil { t.Fatal(err) }
+	return path
+}
+
+func TestAntigravityCompleteParsesTextAndUsage(t *testing.T) {
+	command := fakeAgy(t,
+		`{"event":"step_update","step_update":{"step_type":"model","text_delta":"hello"}}`,
+		`{"event":"result","result":{"status":"SUCCESS","response":"hello","usage":{"input_tokens":12,"output_tokens":3,"cache_read_tokens":2}}}`,
+	)
+	p := &antigravityProvider{command: command, model: "gemini-test", timeout: time.Second * 5}
+	msg, stop, usage, err := p.Complete(context.Background(), llm.CompletionRequest{Messages: []llm.Message{llm.UserText("hi")}})
+	if err != nil { t.Fatal(err) }
+	if msg.Text() != "hello" { t.Fatalf("text = %q, want hello", msg.Text()) }
+	if stop != "end_turn" { t.Fatalf("stop = %q, want end_turn", stop) }
+	if usage.InputTokens != 12 || usage.OutputTokens != 3 || usage.CacheReadTokens != 2 {
+		t.Fatalf("unexpected usage: %+v", usage)
+	}
+}
+
+func TestAntigravityCompleteMapsTextToolCall(t *testing.T) {
+	command := fakeAgy(t,
+		`{"event":"step_update","step_update":{"step_type":"model","text_delta":"<tool_call>{\\"id\\":\\"call-1\\",\\"type\\":\\"function\\",\\"function\\":{\\"name\\":\\"list_assets\\",\\"arguments\\":\\"{\\\\\\"limit\\\\\\":10}\\\"}}</tool_call>"}}}`,
+		`{"event":"result","result":{"status":"SUCCESS","response":""}}`,
+	)
+	p := &antigravityProvider{command: command, model: "gemini-test", timeout: time.Second * 5}
+	msg, stop, _, err := p.Complete(context.Background(), llm.CompletionRequest{
+		Messages: []llm.Message{llm.UserText("list assets")},
+		Tools: []llm.ToolSchema{{Name: "list_assets", InputSchema: map[string]any{"type": "object"}}},
+	})
+	if err != nil { t.Fatal(err) }
+	if stop != "tool_use" { t.Fatalf("stop = %q, want tool_use", stop) }
+	if len(msg.ToolUses()) != 1 { t.Fatalf("tool uses = %d, want 1: %#v", len(msg.ToolUses()), msg.Content) }
+	call := msg.ToolUses()[0]
+	if call.Name != "list_assets" || string(call.Input) != `{"limit":10}` {
+		t.Fatalf("unexpected tool call: %#v", call)
 	}
 }
 
