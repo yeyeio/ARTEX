@@ -604,7 +604,7 @@ function ProfileSheet({
             </p>
           </div>}
 
-          <div className="grid gap-2">
+          {format !== "antigravity" && <div className="grid gap-2">
             <Label htmlFor="p-session-header">Custom session header (optional)</Label>
             <Input
               id="p-session-header"
@@ -618,9 +618,9 @@ function ProfileSheet({
               conv-12, workers like exp3-worker-i87). Meant for gateways that do prompt caching /
               sticky routing on a session-id header; stable across turns of one session, distinct across sessions. Leave empty to not send it.
             </p>
-          </div>
+          </div>}
 
-          <div className="grid gap-2">
+          {format !== "antigravity" && <div className="grid gap-2">
             <Label htmlFor="p-user-agent">Custom User-Agent (optional)</Label>
             <Input
               id="p-user-agent"
@@ -633,7 +633,7 @@ function ProfileSheet({
               Overrides the <b>User-Agent</b> header on every outbound LLM request. Useful for gateways that route or allow-list by
               User-Agent. Leave empty to keep the default User-Agent unchanged.
             </p>
-          </div>
+          </div>}
 
           {format !== "antigravity" && <div className="grid gap-2">
             <Label htmlFor="p-api-key">
