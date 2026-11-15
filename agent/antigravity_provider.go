@@ -141,7 +141,13 @@ func (p *antigravityProvider) run(ctx context.Context, req llm.CompletionRequest
 	}
 	prompt, err := antigravityPrompt(req)
 	if err != nil { return err }
+	// Run outside the ARTEX repository so agy cannot silently load project-local
+	// GEMINI.md instructions or leave conversation artifacts in the application tree.
+	workDir, err := os.MkdirTemp("", "artex-agy-")
+	if err != nil { return fmt.Errorf("antigravity: create isolated workspace: %w", err) }
+	defer os.RemoveAll(workDir)
 	cmd := exec.CommandContext(callCtx, p.command, p.args()...)
+	cmd.Dir = workDir
 	cmd.Stdin = strings.NewReader(prompt)
 	var stderr bytes.Buffer
 	cmd.Stderr = &agyLimitedWriter{buf: &stderr, max: 64 * 1024}
