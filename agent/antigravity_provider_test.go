@@ -143,7 +143,7 @@ func TestAntigravityPromptSerializesToolResults(t *testing.T) {
 	}
 	// Tool arguments are represented as a JSON string in the OpenAI-style
 	// function-call envelope, so the inner JSON quotes are escaped once.
-	for _, want := range []string{"call-1", "list_assets", `\\"limit\\":10`, "Tool Result (call-1)", "asset-a"} {
+	for _, want := range []string{"call-1", "list_assets", `\"limit\":10`, "Tool Result (call-1)", "asset-a"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt missing %q", want)
 		}
