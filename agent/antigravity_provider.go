@@ -37,8 +37,30 @@ func newAntigravityProvider(c Config) (llm.Provider, error) {
 func (p *antigravityProvider) args() []string {
 	args := []string{"--output-format", "stream-json", "--disable-slash-commands"}
 	if p.model != "" { args = append(args, "--model", p.model) }
-	if p.effort != "" { args = append(args, "--effort", p.effort) }
+	// agy only accepts a separate effort flag for suffixless Gemini model IDs.
+	// Native model variants (for example, gemini-*-medium) already encode effort.
+	if strings.HasPrefix(p.model, "gemini-") && !hasNativeAgyEffortSuffix(p.model) && isNativeAgyEffort(p.effort) {
+		args = append(args, "--effort", p.effort)
+	}
 	return args
+}
+
+func hasNativeAgyEffortSuffix(model string) bool {
+	switch model[strings.LastIndex(model, "-")+1:] {
+	case "low", "medium", "high", "xhigh", "max":
+		return true
+	default:
+		return false
+	}
+}
+
+func isNativeAgyEffort(effort string) bool {
+	switch strings.ToLower(strings.TrimSpace(effort)) {
+	case "low", "medium", "high", "xhigh", "max":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *antigravityProvider) Stream(ctx context.Context, req llm.CompletionRequest) iter.Seq2[llm.StreamEvent, error] {
@@ -66,6 +88,7 @@ func (p *antigravityProvider) Complete(ctx context.Context, req llm.CompletionRe
 			}
 			message.Content[len(message.Content)-1].Thinking += ev.Text
 		case llm.SEToolUseStart:
+			stop = "tool_use"
 			message.Content = append(message.Content, llm.ContentBlock{Type: llm.BlockToolUse, ID: ev.ToolID, Name: ev.ToolName, Input: json.RawMessage("{}")})
 		case llm.SEToolInputJSON:
 			if len(message.Content) > 0 {
