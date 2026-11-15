@@ -543,7 +543,7 @@ function ProfileSheet({
               />
               {/* modal: this Popover's content is portaled to <body>, outside the Sheet's scroll lock,
                   so without modal the list renders but cannot scroll. modal lets it hold the topmost scroll lock itself. */}
-              <Popover open={modelsOpen} onOpenChange={setModelsOpen} modal>
+              {format !== "antigravity" && <Popover open={modelsOpen} onOpenChange={setModelsOpen} modal>
                 <PopoverTrigger asChild>
                   <Button
                     type="button"
@@ -574,11 +574,11 @@ function ProfileSheet({
                     ))}
                   </PopoverContent>
                 )}
-              </Popover>
+              </Popover>}
             </div>
           </div>
 
-          <div className="grid gap-2">
+          {format !== "antigravity" && <div className="grid gap-2">
             <Label htmlFor="p-base-url">Base URL (optional)</Label>
             <Input
               id="p-base-url"
@@ -587,9 +587,9 @@ function ProfileSheet({
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
             />
-          </div>
+          </div>}
 
-          <div className="grid gap-2">
+          {format !== "antigravity" && <div className="grid gap-2">
             <Label htmlFor="p-proxy">Proxy (optional)</Label>
             <Input
               id="p-proxy"
@@ -602,7 +602,7 @@ function ProfileSheet({
               Only outbound LLM requests go through this proxy; http/https/socks5 are supported, optionally with credentials (e.g.
               socks5://user:pass@host:port — URL-encode the password if it contains special characters). Leave empty for no proxy (direct connection).
             </p>
-          </div>
+          </div>}
 
           <div className="grid gap-2">
             <Label htmlFor="p-session-header">Custom session header (optional)</Label>
@@ -635,7 +635,7 @@ function ProfileSheet({
             </p>
           </div>
 
-          <div className="grid gap-2">
+          {format !== "antigravity" && <div className="grid gap-2">
             <Label htmlFor="p-api-key">
               {format === "ollama" ? "API Key (optional for Ollama)" : format === "antigravity" ? "API Key (not used)" : "API Key"}
             </Label>
@@ -646,7 +646,8 @@ function ProfileSheet({
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
             />
-          </div>
+          </div>}
+          {format === "antigravity" && <p className="text-muted-foreground text-xs">Authentication is managed by the official agy CLI on the ARTEX server. Run <code>agy</code> and complete Google sign-in on that machine, then enter an exact model ID from <code>agy models</code>. ARTEX does not read or store OAuth tokens.</p>}
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="grid gap-2">
@@ -811,10 +812,10 @@ function ProfileSheet({
         </div>
 
         <div className="flex gap-2 border-t px-4 py-3">
-          <Button variant="outline" onClick={testConnection} disabled={testing}>
+          {format !== "antigravity" && <Button variant="outline" onClick={testConnection} disabled={testing}>
             {testing ? <Loader2Icon className="animate-spin" /> : <PlugZapIcon />}
             {testing ? "Testing…" : "Test connection"}
-          </Button>
+          </Button>}
           <Button onClick={save} disabled={saving} className="flex-1">
             {saving && <Loader2Icon className="animate-spin" />}
             {!saving && (isNew ? <PlusIcon /> : <SaveIcon />)}
