@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Autumn-27/norma/llm"
@@ -23,6 +24,10 @@ type antigravityProvider struct {
 	model   string
 	effort  string
 	timeout time.Duration
+
+	rateInterval time.Duration
+	rateMu       sync.Mutex
+	lastStart    time.Time
 }
 
 func newAntigravityProvider(c Config) (llm.Provider, error) {
@@ -31,7 +36,15 @@ func newAntigravityProvider(c Config) (llm.Provider, error) {
 	if _, err := exec.LookPath(command); err != nil {
 		return nil, fmt.Errorf("antigravity: agy CLI not found (%s): %w", command, err)
 	}
-	return &antigravityProvider{command: command, model: c.Model, effort: c.ReasoningEffort, timeout: 5 * time.Minute}, nil
+	interval := time.Duration(0)
+	if c.RatePerSecond > 0 {
+		interval = time.Duration(float64(time.Second) / c.RatePerSecond)
+	}
+	if c.RatePerMinute > 0 {
+		minuteInterval := time.Duration(float64(time.Minute) / c.RatePerMinute)
+		if minuteInterval > interval { interval = minuteInterval }
+	}
+	return &antigravityProvider{command: command, model: c.Model, effort: c.ReasoningEffort, timeout: 5 * time.Minute, rateInterval: interval}, nil
 }
 
 func (p *antigravityProvider) args() []string {
@@ -108,6 +121,22 @@ func (p *antigravityProvider) run(ctx context.Context, req llm.CompletionRequest
 	if ctx == nil { ctx = context.Background() }
 	callCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
+	if p.rateInterval > 0 {
+		p.rateMu.Lock()
+		wait := time.Until(p.lastStart.Add(p.rateInterval))
+		if wait > 0 {
+			timer := time.NewTimer(wait)
+			select {
+			case <-callCtx.Done():
+				timer.Stop()
+				p.rateMu.Unlock()
+				return callCtx.Err()
+			case <-timer.C:
+			}
+		}
+		p.lastStart = time.Now()
+		p.rateMu.Unlock()
+	}
 	prompt, err := antigravityPrompt(req)
 	if err != nil { return err }
 	cmd := exec.CommandContext(callCtx, p.command, p.args()...)
