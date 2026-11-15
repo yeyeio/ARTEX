@@ -637,7 +637,7 @@ function ProfileSheet({
 
           {format !== "antigravity" && <div className="grid gap-2">
             <Label htmlFor="p-api-key">
-              {format === "ollama" ? "API Key (optional for Ollama)" : format === "antigravity" ? "API Key (not used)" : "API Key"}
+              {format === "ollama" ? "API Key (optional for Ollama)" : "API Key"}
             </Label>
             <Input
               id="p-api-key"
