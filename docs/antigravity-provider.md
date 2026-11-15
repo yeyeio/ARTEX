@@ -25,7 +25,8 @@ The provider checks `ANTIGRAVITY_COMMAND`, `AGY_CLI_PATH`, and `ANTIGRAVITY_CLI_
 
 - Model discovery is manual for now: run `agy models` on the ARTEX server and paste the exact ID. The ARTEX model-list endpoint does not yet proxy `agy models`.
 - The current adapter starts a one-shot CLI process per completion. It replays conversation history in the prompt; it does not keep a persistent agy worker session.
-- Norma's request-level output-token cap and provider-specific thinking toggle are not mapped to agy CLI flags. Profile HTTP proxy, session-header, and custom User-Agent settings also do not apply to the local CLI process.
+- Norma's request-level output-token cap, temperature, stop sequences, and provider-specific thinking toggle are not mapped to agy CLI flags. Profile HTTP proxy, session-header, and custom User-Agent settings also do not apply to the local CLI process.
+- The CLI runs under the ARTEX service account's normal HOME, so agy's own session/config files remain under that account's Antigravity CLI data directory. ARTEX itself does not read or copy OAuth token contents.
 - The ARTEX profile's rate limits are enforced between CLI process starts; they do not account for Google-side quota or other agy processes.
 - Live integration tests require an authenticated Google Antigravity account and an installed `agy` binary. Unit tests cover prompt serialization and model/effort argument mapping without contacting Google.
 
