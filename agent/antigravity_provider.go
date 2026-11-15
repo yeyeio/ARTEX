@@ -237,9 +237,6 @@ func (p *antigravityProvider) run(ctx context.Context, req llm.CompletionRequest
 				sawOutput = true
 				if !emitText(s, false) { _ = cmd.Process.Kill(); _ = cmd.Wait(); return nil }
 			}
-			if u, ok := step["usage"].(map[string]any); ok {
-				if !yield(llm.StreamEvent{Type: llm.SEMessageDelta, Usage: agyUsage(u)}, nil) { _ = cmd.Process.Kill(); _ = cmd.Wait(); return nil }
-			}
 		case "result":
 			res, _ := event["result"].(map[string]any)
 			if res == nil { continue }
