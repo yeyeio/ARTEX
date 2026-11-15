@@ -10,6 +10,7 @@ import (
 	"iter"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -31,10 +32,9 @@ type antigravityProvider struct {
 }
 
 func newAntigravityProvider(c Config) (llm.Provider, error) {
-	command := strings.TrimSpace(os.Getenv("ANTIGRAVITY_COMMAND"))
-	if command == "" { command = "agy" }
-	if _, err := exec.LookPath(command); err != nil {
-		return nil, fmt.Errorf("antigravity: agy CLI not found (%s): %w", command, err)
+	command, err := resolveAntigravityCommand()
+	if err != nil {
+		return nil, err
 	}
 	interval := time.Duration(0)
 	if c.RatePerSecond > 0 {
@@ -45,6 +45,40 @@ func newAntigravityProvider(c Config) (llm.Provider, error) {
 		if minuteInterval > interval { interval = minuteInterval }
 	}
 	return &antigravityProvider{command: command, model: c.Model, effort: c.ReasoningEffort, timeout: 5 * time.Minute, rateInterval: interval}, nil
+}
+
+// resolveAntigravityCommand mirrors the CLI lookup used by the reference
+// Hermes integration. Service managers often provide a reduced PATH, so check
+// the documented user-local install locations as well as PATH.
+func resolveAntigravityCommand() (string, error) {
+	for _, key := range []string{"ANTIGRAVITY_COMMAND", "AGY_CLI_PATH", "ANTIGRAVITY_CLI_PATH"} {
+		if candidate := strings.TrimSpace(os.Getenv(key)); candidate != "" {
+			if path, err := exec.LookPath(candidate); err == nil {
+				return path, nil
+			}
+		}
+	}
+	if path, err := exec.LookPath("agy"); err == nil {
+		return path, nil
+	}
+	home, _ := os.UserHomeDir()
+	binary := "agy"
+	if os.PathSeparator == '\\' { binary = "agy.exe" }
+	candidates := []string{}
+	if home != "" {
+		candidates = append(candidates,
+			filepath.Join(home, ".gemini", "antigravity-cli", "bin", binary),
+			filepath.Join(home, ".local", "bin", binary))
+	}
+	candidates = append(candidates, filepath.Join("/usr/local/bin", binary), filepath.Join("/usr/bin", binary))
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			if os.PathSeparator == '\\' || info.Mode()&0o111 != 0 {
+				return candidate, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("antigravity: agy CLI not found; install it or set ANTIGRAVITY_COMMAND/AGY_CLI_PATH")
 }
 
 func (p *antigravityProvider) args() []string {
