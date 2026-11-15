@@ -86,9 +86,10 @@ func (p *antigravityProvider) Complete(ctx context.Context, req llm.CompletionRe
 	var message llm.Message
 	message.Role = llm.RoleAssistant
 	var usage llm.Usage
+	var streamErr error
 	stop := "end_turn"
 	err := p.run(ctx, req, func(ev llm.StreamEvent, err error) bool {
-		if err != nil { return false }
+		if err != nil { streamErr = err; return false }
 		switch ev.Type {
 		case llm.SETextDelta:
 			if len(message.Content) == 0 || message.Content[len(message.Content)-1].Type != llm.BlockText {
@@ -114,6 +115,7 @@ func (p *antigravityProvider) Complete(ctx context.Context, req llm.CompletionRe
 		}
 		return true
 	})
+	if err == nil { err = streamErr }
 	return message, stop, usage, err
 }
 
