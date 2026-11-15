@@ -59,7 +59,7 @@ const MAX_TOKENS_FIELD_HINTS: Record<string, string> = {
 };
 // LLM profile formats. The default in the create form is "anthropic"; "ollama" is the
 // keyless local-server format (base URL defaults to http://127.0.0.1:11434/v1).
-type ProfileFormat = "anthropic" | "openai" | "openai-responses" | "ollama";
+type ProfileFormat = "anthropic" | "openai" | "openai-responses" | "ollama" | "antigravity";
 const OLLAMA_DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1";
 const EFFORT_LEVELS: { value: string; label: string }[] = [
   { value: NONE, label: "Not sent (default)" },
@@ -81,7 +81,7 @@ function cooldownText(secs: number) {
 // records (with polling off no new records appear, so "healthy" = no known failure).
 type Health = { label: string; cls: string; hint?: string };
 function healthOf(p: LLMProfile, m?: LLMPoolMember): Health {
-  if (!p.api_key_hint && p.format !== "ollama") {
+  if (!p.api_key_hint && p.format !== "ollama" && p.format !== "antigravity") {
     return {
       label: "No Key configured",
       cls: "border-muted-foreground/40 text-muted-foreground",
@@ -349,7 +349,7 @@ function ProfileSheet({
     if (!open) return;
     setName(profile?.name ?? "");
     setFormat(
-      profile?.format === "openai" || profile?.format === "openai-responses" || profile?.format === "ollama"
+      profile?.format === "openai" || profile?.format === "openai-responses" || profile?.format === "ollama" || profile?.format === "antigravity"
         ? profile.format
         : "anthropic",
     );
@@ -475,6 +475,8 @@ function ProfileSheet({
   let keyPlaceholder = "sk-…";
   if (format === "ollama") {
     keyPlaceholder = "optional — a local Ollama server runs keyless";
+  } else if (format === "antigravity") {
+    keyPlaceholder = "not used — authenticate with agy login";
   } else if (keyHint) {
     keyPlaceholder = `Set (${keyHint}); leave empty to keep it`;
   }
@@ -523,6 +525,7 @@ function ProfileSheet({
                   <SelectItem value="openai">OpenAI (Chat Completions)</SelectItem>
                   <SelectItem value="openai-responses">OpenAI (Responses API)</SelectItem>
                   <SelectItem value="ollama">Ollama (local, no key needed)</SelectItem>
+                  <SelectItem value="antigravity">Google Antigravity (agy CLI, OAuth)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -534,7 +537,7 @@ function ProfileSheet({
               <Input
                 id="p-model"
                 className="font-mono"
-                placeholder={format === "ollama" ? "llama3.2" : "claude-opus-4-8"}
+                placeholder={format === "ollama" ? "llama3.2" : format === "antigravity" ? "exact model ID from agy models" : "claude-opus-4-8"}
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
               />
@@ -634,7 +637,7 @@ function ProfileSheet({
 
           <div className="grid gap-2">
             <Label htmlFor="p-api-key">
-              {format === "ollama" ? "API Key (optional for Ollama)" : "API Key"}
+              {format === "ollama" ? "API Key (optional for Ollama)" : format === "antigravity" ? "API Key (not used)" : "API Key"}
             </Label>
             <Input
               id="p-api-key"
