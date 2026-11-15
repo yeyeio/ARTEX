@@ -52,8 +52,10 @@ func (p *antigravityProvider) args() []string {
 	if p.model != "" { args = append(args, "--model", p.model) }
 	// agy only accepts a separate effort flag for suffixless Gemini model IDs.
 	// Native model variants (for example, gemini-*-medium) already encode effort.
-	if strings.HasPrefix(p.model, "gemini-") && !hasNativeAgyEffortSuffix(p.model) && isNativeAgyEffort(p.effort) {
-		args = append(args, "--effort", p.effort)
+	if strings.HasPrefix(p.model, "gemini-") && !hasNativeAgyEffortSuffix(p.model) {
+		if effort := normalizeNativeAgyEffort(p.effort); effort != "" {
+			args = append(args, "--effort", effort)
+		}
 	}
 	return args
 }
@@ -67,12 +69,14 @@ func hasNativeAgyEffortSuffix(model string) bool {
 	}
 }
 
-func isNativeAgyEffort(effort string) bool {
+func normalizeNativeAgyEffort(effort string) string {
 	switch strings.ToLower(strings.TrimSpace(effort)) {
+	case "none", "off", "minimal":
+		return "low"
 	case "low", "medium", "high", "xhigh", "max":
-		return true
+		return strings.ToLower(strings.TrimSpace(effort))
 	default:
-		return false
+		return ""
 	}
 }
 
