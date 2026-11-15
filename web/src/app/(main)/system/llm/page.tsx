@@ -764,7 +764,7 @@ function ProfileSheet({
           </div>}
 
           <div className="grid gap-3 rounded-lg border p-3">
-            {format !== "antigravity" &&             <div className="flex items-center justify-between gap-4">
+            {format !== "antigravity" && <div className="flex items-center justify-between gap-4">
               <div className="grid gap-0.5">
                 <Label className="text-sm">Thinking switch · thinking.type</Label>
                 <p className="text-muted-foreground text-xs">
