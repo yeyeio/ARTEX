@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:static": "NEXT_EXPORT=1 next build",
+    "build:static": "node -e \"process.env.NEXT_EXPORT='1'; require('child_process').execFileSync(process.execPath, ['node_modules/next/dist/bin/next', 'build'], {stdio: 'inherit', env: process.env})\"",
     "start": "next start",
     "lint": "biome lint",
     "format": "biome format --write",
