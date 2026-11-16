@@ -279,6 +279,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 	// seeded browser MCP on first run). Async so it never blocks startup.
 	go s.discoverEmptyMCPsOnStartup()
 	s.restoreTaskRuntimes()
+	go s.monitorExhaustedTaskLLMChains()
 	go s.reconcileConcurrency()
 	s.startTaskArchiveWorker()
 	s.wireInterceptReviewer() // LLM fallback approval: commands that hit no interception rule go to the model for judgment
