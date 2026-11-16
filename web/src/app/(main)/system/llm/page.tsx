@@ -60,7 +60,7 @@ const MAX_TOKENS_FIELD_HINTS: Record<string, string> = {
 };
 // LLM profile formats. The default in the create form is "anthropic"; "ollama" is the
 // keyless local-server format (base URL defaults to http://127.0.0.1:11434/v1).
-type ProfileFormat = "anthropic" | "openai" | "openai-responses" | "ollama";
+type ProfileFormat = "anthropic" | "openai" | "openai-responses" | "ollama" | "antigravity";
 const OLLAMA_DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1";
 const EFFORT_LEVELS: { value: string; label: string }[] = [
   { value: NONE, label: "Not sent (default)" },
@@ -82,7 +82,7 @@ function cooldownText(secs: number) {
 // records (with polling off no new records appear, so "healthy" = no known failure).
 type Health = { label: string; cls: string; hint?: string };
 function healthOf(p: LLMProfile, m?: LLMPoolMember): Health {
-  if (!p.api_key_hint && p.format !== "ollama") {
+  if (!p.api_key_hint && p.format !== "ollama" && p.format !== "antigravity") {
     return {
       label: "No Key configured",
       cls: "border-muted-foreground/40 text-muted-foreground",
@@ -350,7 +350,7 @@ function ProfileSheet({
     if (!open) return;
     setName(profile?.name ?? "");
     setFormat(
-      profile?.format === "openai" || profile?.format === "openai-responses" || profile?.format === "ollama"
+      profile?.format === "openai" || profile?.format === "openai-responses" || profile?.format === "ollama" || profile?.format === "antigravity"
         ? profile.format
         : "anthropic",
     );
@@ -476,6 +476,8 @@ function ProfileSheet({
   let keyPlaceholder = "sk-…";
   if (format === "ollama") {
     keyPlaceholder = "optional — a local Ollama server runs keyless";
+  } else if (format === "antigravity") {
+    keyPlaceholder = "not used — authenticate with agy login";
   } else if (keyHint) {
     keyPlaceholder = `Set (${keyHint}); leave empty to keep it`;
   }
@@ -524,6 +526,7 @@ function ProfileSheet({
                   <SelectItem value="openai">OpenAI (Chat Completions)</SelectItem>
                   <SelectItem value="openai-responses">OpenAI (Responses API)</SelectItem>
                   <SelectItem value="ollama">Ollama (local, no key needed)</SelectItem>
+                  <SelectItem value="antigravity">Google Antigravity (agy CLI, OAuth)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -535,13 +538,13 @@ function ProfileSheet({
               <Input
                 id="p-model"
                 className="font-mono"
-                placeholder={format === "ollama" ? "llama3.2" : "claude-opus-4-8"}
+                placeholder={format === "ollama" ? "llama3.2" : format === "antigravity" ? "exact model ID from agy models" : "claude-opus-4-8"}
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
               />
               {/* modal: this Popover's content is portaled to <body>, outside the Sheet's scroll lock,
                   so without modal the list renders but cannot scroll. modal lets it hold the topmost scroll lock itself. */}
-              <Popover open={modelsOpen} onOpenChange={setModelsOpen} modal>
+              {format !== "antigravity" && <Popover open={modelsOpen} onOpenChange={setModelsOpen} modal>
                 <PopoverTrigger asChild>
                   <Button
                     type="button"
@@ -572,11 +575,11 @@ function ProfileSheet({
                     ))}
                   </PopoverContent>
                 )}
-              </Popover>
+              </Popover>}
             </div>
           </div>
 
-          <div className="grid gap-2">
+          {format !== "antigravity" && <div className="grid gap-2">
             <Label htmlFor="p-base-url">Base URL (optional)</Label>
             <Input
               id="p-base-url"
@@ -585,9 +588,9 @@ function ProfileSheet({
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
             />
-          </div>
+          </div>}
 
-          <div className="grid gap-2">
+          {format !== "antigravity" && <div className="grid gap-2">
             <Label htmlFor="p-proxy">Proxy (optional)</Label>
             <Input
               id="p-proxy"
@@ -600,9 +603,9 @@ function ProfileSheet({
               Only outbound LLM requests go through this proxy; http/https/socks5 are supported, optionally with credentials (e.g.
               socks5://user:pass@host:port — URL-encode the password if it contains special characters). Leave empty for no proxy (direct connection).
             </p>
-          </div>
+          </div>}
 
-          <div className="grid gap-2">
+          {format !== "antigravity" && <div className="grid gap-2">
             <Label htmlFor="p-session-header">Custom session header (optional)</Label>
             <Input
               id="p-session-header"
@@ -616,9 +619,9 @@ function ProfileSheet({
               conv-12, workers like exp3-worker-i87). Meant for gateways that do prompt caching /
               sticky routing on a session-id header; stable across turns of one session, distinct across sessions. Leave empty to not send it.
             </p>
-          </div>
+          </div>}
 
-          <div className="grid gap-2">
+          {format !== "antigravity" && <div className="grid gap-2">
             <Label htmlFor="p-user-agent">Custom User-Agent (optional)</Label>
             <Input
               id="p-user-agent"
@@ -631,9 +634,9 @@ function ProfileSheet({
               Overrides the <b>User-Agent</b> header on every outbound LLM request. Useful for gateways that route or allow-list by
               User-Agent. Leave empty to keep the default User-Agent unchanged.
             </p>
-          </div>
+          </div>}
 
-          <div className="grid gap-2">
+          {format !== "antigravity" && <div className="grid gap-2">
             <Label htmlFor="p-api-key">
               {format === "ollama" ? "API Key (optional for Ollama)" : "API Key"}
             </Label>
@@ -644,7 +647,8 @@ function ProfileSheet({
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
             />
-          </div>
+          </div>}
+          {format === "antigravity" && <p className="text-muted-foreground text-xs">Authentication is managed by the official agy CLI on the ARTEX server. Run <code>agy</code> and complete Google sign-in on that machine, then enter an exact model ID from <code>agy models</code>. ARTEX does not read or store OAuth tokens.</p>}
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="grid gap-2">
@@ -714,7 +718,7 @@ function ProfileSheet({
             </div>
           </div>
 
-          <div className="grid gap-3 rounded-lg border p-3">
+          {format !== "antigravity" && <div className="grid gap-3 rounded-lg border p-3">
             <div className="flex items-center justify-between gap-4">
               <div className="grid gap-0.5">
                 <Label htmlFor="p-max-tokens" className="text-sm">
@@ -758,10 +762,10 @@ function ProfileSheet({
                 </SelectContent>
               </Select>
             </div>
-          </div>
+          </div>}
 
           <div className="grid gap-3 rounded-lg border p-3">
-            <div className="flex items-center justify-between gap-4">
+            {format !== "antigravity" && <div className="flex items-center justify-between gap-4">
               <div className="grid gap-0.5">
                 <Label className="text-sm">Thinking switch · thinking.type</Label>
                 <p className="text-muted-foreground text-xs">
@@ -781,13 +785,12 @@ function ProfileSheet({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </div>}
             <div className="flex items-center justify-between gap-4 border-t pt-3">
               <div className="grid gap-0.5">
                 <Label className="text-sm">Thinking effort · reasoning_effort</Label>
                 <p className="text-muted-foreground text-xs">
-                  A separate effort knob (OpenAI reasoning_effort / Anthropic output_config.effort). Some APIs have no thinking
-                  field and activate thinking via effort alone, so it can be set on its own without sending the thinking switch.
+                  {format === "antigravity" ? "For Gemini models, agy receives the supported CLI effort flag. Native model variants already encode their own effort." : "A separate effort knob (OpenAI reasoning_effort / Anthropic output_config.effort). Some APIs have no thinking field and activate thinking via effort alone."}
                 </p>
               </div>
               <Select value={effort} onValueChange={setEffort}>
@@ -809,10 +812,10 @@ function ProfileSheet({
         </div>
 
         <div className="flex gap-2 border-t px-4 py-3">
-          <Button variant="outline" onClick={testConnection} disabled={testing}>
+          {format !== "antigravity" && <Button variant="outline" onClick={testConnection} disabled={testing}>
             {testing ? <Loader2Icon className="animate-spin" /> : <PlugZapIcon />}
             {testing ? "Testing…" : "Test connection"}
-          </Button>
+          </Button>}
           <Button onClick={save} disabled={saving} className="flex-1">
             {saving && <Loader2Icon className="animate-spin" />}
             {!saving && (isNew ? <PlusIcon /> : <SaveIcon />)}

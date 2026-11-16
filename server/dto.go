@@ -58,6 +58,7 @@ type TaskDTO struct {
 	LLMRotate          bool               `json:"llm_rotate"`
 	LLMFailoverState   string             `json:"llm_failover_state"`
 	LLMFailoverReason  string             `json:"llm_failover_reason,omitempty"`
+	LLMRecoveryNextSec int                `json:"llm_recovery_next_sec,omitempty"`
 	SourceTaskIDs      []string           `json:"source_task_ids"`
 	ArchiveBlockedBy   string             `json:"archive_blocked_by_task_id,omitempty"`
 	CompanyIDs         []int64            `json:"company_ids"`

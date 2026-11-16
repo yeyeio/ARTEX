@@ -29,7 +29,7 @@ type TaskSource struct {
 }
 
 // TaskLLMTransition reports the shared task-level result of marking one profile
-// quota-exhausted. NextProfileID is nil when the explicit chain is exhausted.
+// quota-exhausted or recovering a profile. NextProfileID is nil when the explicit chain is exhausted.
 type TaskLLMTransition struct {
 	PreviousProfileID int64
 	NextProfileID     *int64
@@ -40,6 +40,14 @@ type TaskLLMTransition struct {
 	// but must not report or persist a transition for this result.
 	Stale bool
 }
+
+const (
+	LLMFailoverStateDefault        = "default"
+	LLMFailoverStateReady          = "ready"
+	LLMFailoverStateChainExhausted = "chain_exhausted"
+	LLMFailoverStateWaitingForLLM  = "waiting_for_llm"
+	LLMFailoverStateResuming       = "resuming"
+)
 
 func (d *DB) hydrateTaskContext(t *Task) error {
 	if t == nil {
@@ -542,6 +550,60 @@ ORDER BY position LIMIT 1`, taskID, position).Scan(&next)
 	default:
 		return out, err
 	}
+	return out, tx.Commit()
+}
+
+// RecoverTaskLLMProfile marks an exhausted profile as ready again.
+// If the task currently has no active profile (i.e. its chain was exhausted),
+// this profile is activated as active_llm_profile_id and llm_chain_revision is incremented.
+func (d *DB) RecoverTaskLLMProfile(taskID, profileID int64) (TaskLLMTransition, error) {
+	var out TaskLLMTransition
+	tx, err := d.Begin()
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+
+	var (
+		active          sql.NullInt64
+		currentRevision int64
+	)
+	if err := tx.QueryRow(`SELECT active_llm_profile_id, llm_chain_revision FROM tasks WHERE id=$1 FOR UPDATE`, taskID).Scan(&active, &currentRevision); err != nil {
+		return out, err
+	}
+	out.PreviousProfileID = 0
+	if active.Valid {
+		out.PreviousProfileID = active.Int64
+	}
+
+	res, err := tx.Exec(`UPDATE task_llm_profiles
+SET status='ready', last_error=NULL, exhausted_at=NULL
+WHERE task_id=$1 AND profile_id=$2`, taskID, profileID)
+	if err != nil {
+		return out, err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return out, err
+	}
+	if rows == 0 {
+		return out, fmt.Errorf("profile %d not found in task %d chain", profileID, taskID)
+	}
+
+	if !active.Valid {
+		if _, err := tx.Exec(`UPDATE tasks
+SET active_llm_profile_id=$2, llm_profile_id=$2, llm_chain_revision=llm_chain_revision+1
+WHERE id=$1`, taskID, profileID); err != nil {
+			return out, err
+		}
+		out.Advanced = true
+		out.NextProfileID = &profileID
+		out.ChainExhausted = false
+	} else {
+		next := active.Int64
+		out.NextProfileID = &next
+	}
+
 	return out, tx.Commit()
 }
 

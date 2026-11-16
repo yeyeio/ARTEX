@@ -20,6 +20,7 @@ func TestFromEnvProviderIsCaseInsensitive(t *testing.T) {
 		key  string
 	}{
 		{"Ollama", FormatOllama, ""},
+		{"Antigravity", FormatAntigravity, ""},
 		{" OLLAMA ", FormatOllama, ""},
 		{"OpenAI", llm.FormatOpenAI, "sk-oai"},
 		{"OpenAI-Responses", llm.FormatOpenAIResponses, "sk-oai"},
