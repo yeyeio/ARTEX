@@ -38,6 +38,22 @@ func (s *Server) recoverExhaustedTaskLLMChains() {
 		return
 	}
 	for _, task := range s.m.List() {
+		taskID, err := strconv.ParseInt(task.ID, 10, 64)
+		if err != nil {
+			continue
+		}
+		// Refresh the persisted cursor on every pass. If a previous pass committed
+		// recovery but failed while reloading the task, the next pass must repair
+		// the in-memory mirror rather than getting stuck on its stale exhausted view.
+		pt, err := s.m.pg.GetTask(taskID)
+		if err != nil || pt == nil {
+			if err != nil {
+				log.Printf("[llm-recovery] task %s: refresh persisted chain: %v", task.ID, err)
+			}
+			continue
+		}
+		s.syncTaskLLMState(pt)
+
 		lifecycle := task.lifecycleSnapshot()
 		if lifecycle.Paused || isTerminalStatus(lifecycle.Status) || lifecycle.Queued {
 			continue
@@ -47,10 +63,6 @@ func (s *Server) recoverExhaustedTaskLLMChains() {
 			continue
 		}
 
-		taskID, err := strconv.ParseInt(task.ID, 10, 64)
-		if err != nil {
-			continue
-		}
 		profileID, recovered, err := s.m.pg.RecoverTaskLLMProfileAfterCooldown(taskID, taskLLMRecoveryCooldown)
 		if err != nil {
 			log.Printf("[llm-recovery] task %s: recover cooled-down profile: %v", task.ID, err)
@@ -60,7 +72,7 @@ func (s *Server) recoverExhaustedTaskLLMChains() {
 			continue
 		}
 
-		pt, err := s.m.pg.GetTask(taskID)
+		pt, err = s.m.pg.GetTask(taskID)
 		if err != nil || pt == nil {
 			log.Printf("[llm-recovery] task %s: reload recovered chain: %v", task.ID, err)
 			continue
@@ -72,7 +84,7 @@ func (s *Server) recoverExhaustedTaskLLMChains() {
 		// upstream health; if quota is still exhausted, normal failover marks
 		// this profile exhausted again and the cooldown starts over.
 		if _, _, ok := s.providerForProfile(profileID); !ok {
-			transition, markErr := s.m.pg.MarkTaskLLMProfileQuotaExhaustedAtRevision(
+			_, markErr := s.m.pg.MarkTaskLLMProfileQuotaExhaustedAtRevision(
 				taskID, profileID, pt.LLMChainRevision,
 				"recovery probe: LLM profile configuration is invalid or unavailable",
 			)
@@ -81,7 +93,6 @@ func (s *Server) recoverExhaustedTaskLLMChains() {
 			} else if refreshed, getErr := s.m.pg.GetTask(taskID); getErr == nil && refreshed != nil {
 				s.syncTaskLLMState(refreshed)
 			}
-			_ = transition
 			continue
 		}
 
