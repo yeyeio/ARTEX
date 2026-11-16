@@ -577,3 +577,64 @@ WHERE exploration_id=$1 AND kind='intent' AND state='blocked' AND blocked_reason
 	n, _ := res.RowsAffected()
 	return n, nil
 }
+
+
+// RecoverTaskLLMProfileAfterCooldown re-arms the earliest profile in an exhausted
+// task chain after its cooldown. The next real task request is the health probe:
+// this avoids sending synthetic requests (and spending quota) when there is no
+// pending task work. Row locking and the active-cursor check make concurrent
+// recovery monitors safe; only one caller can move the cursor.
+func (d *DB) RecoverTaskLLMProfileAfterCooldown(taskID int64, cooldown time.Duration) (int64, bool, error) {
+	if cooldown < 0 {
+		cooldown = 0
+	}
+	tx, err := d.Begin()
+	if err != nil {
+		return 0, false, err
+	}
+	defer tx.Rollback()
+
+	var active sql.NullInt64
+	if err := tx.QueryRow(`SELECT active_llm_profile_id FROM tasks WHERE id=$1 FOR UPDATE`, taskID).Scan(&active); err != nil {
+		return 0, false, err
+	}
+	// A non-NULL cursor means another call or operator action already recovered
+	// the chain. Never move a live cursor from the background monitor.
+	if active.Valid {
+		return 0, false, tx.Commit()
+	}
+
+	var profileID int64
+	err = tx.QueryRow(`SELECT profile_id
+FROM task_llm_profiles
+WHERE task_id=$1
+  AND status='quota_exhausted'
+  AND exhausted_at IS NOT NULL
+  AND exhausted_at <= now() - ($2 * interval '1 millisecond')
+ORDER BY position
+LIMIT 1
+FOR UPDATE`, taskID, cooldown.Milliseconds()).Scan(&profileID)
+	if err == sql.ErrNoRows {
+		return 0, false, tx.Commit()
+	}
+	if err != nil {
+		return 0, false, err
+	}
+
+	if _, err := tx.Exec(`UPDATE task_llm_profiles
+SET status='ready', last_error='', exhausted_at=NULL
+WHERE task_id=$1 AND profile_id=$2 AND status='quota_exhausted'`, taskID, profileID); err != nil {
+		return 0, false, err
+	}
+	if _, err := tx.Exec(`UPDATE tasks
+SET active_llm_profile_id=$2,
+    llm_profile_id=$2,
+    llm_chain_revision=llm_chain_revision+1
+WHERE id=$1 AND active_llm_profile_id IS NULL`, taskID, profileID); err != nil {
+		return 0, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, false, err
+	}
+	return profileID, true, nil
+}
