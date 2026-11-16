@@ -610,10 +610,10 @@ FROM task_llm_profiles
 WHERE task_id=$1
   AND status='quota_exhausted'
   AND exhausted_at IS NOT NULL
-  AND exhausted_at <= now() - $2::interval
+  AND exhausted_at <= now() - ($2 * interval '1 millisecond')
 ORDER BY position
 LIMIT 1
-FOR UPDATE`, taskID, cooldown.String()).Scan(&profileID)
+FOR UPDATE`, taskID, cooldown.Milliseconds()).Scan(&profileID)
 	if err == sql.ErrNoRows {
 		return 0, false, tx.Commit()
 	}
