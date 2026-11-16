@@ -716,3 +716,85 @@ func TestListTasksOrderByIDDesc(t *testing.T) {
 		t.Fatalf("order=%v, want descending %v", seen, []int64{ids[2], ids[1], ids[0]})
 	}
 }
+
+
+func TestRecoverTaskLLMProfileAfterCooldown(t *testing.T) {
+	d, err := Open(testDSN(t))
+	if err != nil {
+		t.Skipf("postgres unavailable (%v) — skipping", err)
+	}
+	t.Cleanup(func() { d.Close() })
+
+	suffix := time.Now().UnixNano()
+	profileIDs := make([]int64, 0, 2)
+	for i := 0; i < 2; i++ {
+		id, err := d.SaveProfile(&LLMProfile{
+			Name: fmt.Sprintf("task-recovery-%d-%d", suffix, i),
+			Format: "openai", Model: fmt.Sprintf("recovery-model-%d", i), APIKey: "test-key",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		profileIDs = append(profileIDs, id)
+	}
+	task, err := d.CreateTaskWithOptions("recovery test", "resume after quota", TaskCreateOptions{LLMProfileIDs: profileIDs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanupErr(t, "recovery task", d.DeleteTask(task.ID))
+		for _, id := range profileIDs {
+			cleanupProfile(t, d, id)
+		}
+	})
+
+	for _, id := range profileIDs {
+		if _, err := d.MarkTaskLLMProfileQuotaExhausted(task.ID, id, "insufficient_quota"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exhausted, err := d.GetTask(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exhausted.ActiveLLMProfileID != nil {
+		t.Fatalf("chain should be exhausted before recovery: %+v", exhausted)
+	}
+	if _, recovered, err := d.RecoverTaskLLMProfileAfterCooldown(task.ID, 5*time.Minute); err != nil || recovered {
+		t.Fatalf("profile recovered before cooldown: recovered=%v err=%v", recovered, err)
+	}
+
+	if _, err := d.Exec(`UPDATE task_llm_profiles
+SET exhausted_at=now()-interval '10 minutes'
+WHERE task_id=$1 AND profile_id=$2`, task.ID, profileIDs[0]); err != nil {
+		t.Fatal(err)
+	}
+	beforeRevision := exhausted.LLMChainRevision
+	recoveredID, recovered, err := d.RecoverTaskLLMProfileAfterCooldown(task.ID, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !recovered || recoveredID != profileIDs[0] {
+		t.Fatalf("recovery got profile=%d recovered=%v, want first cooled profile %d", recoveredID, recovered, profileIDs[0])
+	}
+	got, err := d.GetTask(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ActiveLLMProfileID == nil || *got.ActiveLLMProfileID != profileIDs[0] {
+		t.Fatalf("recovered profile did not become active: %+v", got)
+	}
+	if got.LLMChainRevision != beforeRevision+1 || got.LLMFailoverState != "ready" {
+		t.Fatalf("recovery did not advance chain revision/state: before=%d task=%+v", beforeRevision, got)
+	}
+	chain, err := d.TaskLLMProfiles(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chain) != 2 || chain[0].Status != "ready" || chain[0].ExhaustedAt != nil {
+		t.Fatalf("recovered profile status was not reset: %+v", chain)
+	}
+	if _, recovered, err := d.RecoverTaskLLMProfileAfterCooldown(task.ID, 5*time.Minute); err != nil || recovered {
+		t.Fatalf("monitor must not move a non-exhausted cursor: recovered=%v err=%v", recovered, err)
+	}
+}
