@@ -129,6 +129,8 @@ type Server struct {
 	archiveWake chan struct{}
 	archiveWG   sync.WaitGroup
 	side        *sideQuestionState
+
+	recoverySupervisor *LLMRecoverySupervisor
 }
 
 // provEntry is a cached provider + its config for one LLM profile id.
@@ -170,6 +172,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 	}
 	s.initSetupToken()
 	s.initSideQuestions()
+	s.recoverySupervisor = newLLMRecoverySupervisor(s)
 	// Circuit-breaker thresholds/cooldowns are hot parameters on the failure path; push the global retry policy to the Registry once at startup,
 	// and again on every policy save (saveLLMRetryPolicy).
 	s.applyRetryPolicy()
@@ -250,6 +253,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		// Vulnerability IM push delivery engine. Sits beside the Scheduler but independent: push latency demands (3s)
 		// differ from the triggers' business cadence, and neither's failures drag the other down — a stuck push must not affect agent triggers.
 		go newNotifier(s).Run(s.ctx)
+		go s.recoverySupervisor.Run(s.ctx) // Auto-resume supervisor for tasks waiting on LLM recovery
 		logSink.SetDB(ctx, m.pg) // restore last 100 log rows and enable async persistence
 	}
 	// precedence: persisted DB config > env.
@@ -760,6 +764,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/tasks/{id}/constraints/{cid}", s.deleteConstraint) // constraint management: delete a constraint
 	mux.HandleFunc("POST /api/tasks/{id}/control", s.control)
 	mux.HandleFunc("PUT /api/tasks/{id}/llm", s.updateTaskLLMProfiles)
+	mux.HandleFunc("POST /api/tasks/{id}/llm/recover", s.recoverTaskLLMHandler)
 	mux.HandleFunc("GET /api/tasks/{id}/llm/resolution", s.taskLLMResolutionHandler)
 	mux.HandleFunc("POST /api/tasks/{id}/intents/{iid}/control", s.controlIntent)
 	mux.HandleFunc("POST /api/tasks/{id}/intents/{iid}/messages", s.sendWorkerMessage)
@@ -1129,6 +1134,15 @@ func (s *Server) applyTaskMetrics(dto *TaskDTO, t *Task, metric db.TaskListMetri
 		Medium:   metric.Findings.Medium,
 		Low:      metric.Findings.Low,
 	}
+	if s.recoverySupervisor != nil {
+		if next, ok := s.recoverySupervisor.NextCheckFor(t.ID); ok {
+			sec := int(time.Until(next).Seconds())
+			if sec < 0 {
+				sec = 0
+			}
+			dto.LLMRecoveryNextSec = sec
+		}
+	}
 }
 
 func (s *Server) resolvedTaskStatus(t *Task) string {
@@ -1143,7 +1157,7 @@ func (s *Server) resolvedTaskStatus(t *Task) string {
 		return "queued"
 	case lifecycle.Paused || s.engine.IsPaused(t.ID):
 		return "paused"
-	case t.llmStateSnapshot().FailoverState == "chain_exhausted" && s.engine.Started(t.ID):
+	case (t.llmStateSnapshot().FailoverState == "chain_exhausted" || t.llmStateSnapshot().FailoverState == "waiting_for_llm") && s.engine.Started(t.ID):
 		// LLM readiness is an execution dependency, not lifecycle state. Keeping
 		// an exhausted task running lets the user edit/reset its chain directly.
 		return "running"
@@ -1789,6 +1803,30 @@ func (s *Server) updateTaskLLMProfiles(w http.ResponseWriter, r *http.Request) {
 		result["switch_event"] = activityDTO(event)
 	}
 	writeJSON(w, 200, result)
+}
+
+func (s *Server) recoverTaskLLMHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if s.recoverySupervisor == nil {
+		writeErr(w, 500, "recovery supervisor is not initialized")
+		return
+	}
+	recovered, err := s.recoverySupervisor.TriggerRecovery(r.Context(), id)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	t, ok := s.m.Task(id)
+	if !ok {
+		writeErr(w, 404, "task not found")
+		return
+	}
+	llmState := t.llmStateSnapshot()
+	writeJSON(w, 200, map[string]any{
+		"recovered":             recovered,
+		"active_llm_profile_id": llmState.ActiveID,
+		"llm_failover_state":    llmState.FailoverState,
+	})
 }
 
 var (

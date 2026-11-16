@@ -1166,6 +1166,39 @@ func (m *Manager) ReplaceTaskLLMProfiles(id string, profileIDs []int64, activePr
 	return 0, nil
 }
 
+// RecoverTaskLLMProfile marks an exhausted profile as ready again, activates it if
+// the task chain was exhausted, syncs the in-memory state, and reopens quota-blocked intents.
+func (m *Manager) RecoverTaskLLMProfile(id string, profileID int64) (pgdb.TaskLLMTransition, int64, error) {
+	n, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return pgdb.TaskLLMTransition{}, 0, err
+	}
+	transition, err := m.pg.RecoverTaskLLMProfile(n, profileID)
+	if err != nil {
+		return transition, 0, err
+	}
+	pt, err := m.pg.GetTask(n)
+	if err != nil || pt == nil {
+		return transition, 0, err
+	}
+	m.mu.Lock()
+	if task := m.tasks[id]; task != nil {
+		task.setLLMState(pt.LLMProfileID, pt.ActiveLLMProfileID, pt.LLMProfileIDs, pt.LLMChainRevision, pt.LLMFailoverState, pt.LLMFailoverReason)
+	}
+	m.mu.Unlock()
+	if pgdb.IsTerminal(pt.Status) {
+		return transition, 0, nil
+	}
+	if task, ok := m.Task(id); ok {
+		reopened, reopenErr := task.Store.ReopenIntentsByBlockedReason(pgdb.IntentBlockedLLMQuota)
+		if reopenErr != nil {
+			return transition, reopened, reopenErr
+		}
+		return transition, reopened, nil
+	}
+	return transition, 0, nil
+}
+
 // LoadExisting rebuilds in-memory task handles from the PG task registry.
 func (m *Manager) LoadExisting() []*Task {
 	pts, err := m.pg.ListTasks()

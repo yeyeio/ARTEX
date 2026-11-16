@@ -329,6 +329,22 @@ func TestTaskRelationsAndLLMFailoverChain(t *testing.T) {
 		t.Fatalf("chain exhaustion was not persisted: %+v", got)
 	}
 
+	// Test recovering a profile from the exhausted chain.
+	recoverTrans, err := d.RecoverTaskLLMProfile(child.ID, profileIDs[0])
+	if err != nil {
+		t.Fatalf("RecoverTaskLLMProfile error: %v", err)
+	}
+	if !recoverTrans.Advanced || recoverTrans.ChainExhausted || recoverTrans.NextProfileID == nil || *recoverTrans.NextProfileID != profileIDs[0] {
+		t.Fatalf("unexpected recovery transition: %+v", recoverTrans)
+	}
+	got, err = d.GetTask(child.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ActiveLLMProfileID == nil || *got.ActiveLLMProfileID != profileIDs[0] || got.LLMFailoverState != "ready" {
+		t.Fatalf("recovered profile did not activate or reset failover state: %+v", got)
+	}
+
 	// Two requests can observe the same last active profile. Only the transaction
 	// that clears the cursor may report an advance; the late one is idempotent.
 	if err := d.ReplaceTaskLLMProfiles(child.ID, []int64{profileIDs[2]}, profileIDs[2]); err != nil {
