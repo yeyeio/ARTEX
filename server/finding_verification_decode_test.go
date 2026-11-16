@@ -38,7 +38,13 @@ func compressBody(t *testing.T, newWriter func(io.Writer) io.WriteCloser, data [
 }
 
 func gzipBody(t *testing.T, data []byte) []byte {
-	return compressBody(t, func(w io.Writer) io.WriteCloser { return gzip.NewWriter(w) }, data)
+	return compressBody(t, func(w io.Writer) io.WriteCloser {
+		gw, err := gzip.NewWriterLevel(w, gzip.BestCompression)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return gw
+	}, data)
 }
 
 // decodeSnapshot stores raw as a response body in a database-less evidence
